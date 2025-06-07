@@ -127,7 +127,6 @@ function validateWorkingDir(workingDir: string): string {
     }
 }
 
-// Enhanced terminal command execution
 async function executeTerminalCommand(command: string, options: Partial<TerminalCommand> = {}): Promise<TerminalResult> {
     const startTime = Date.now();
     const processId = `proc_${++processCounter}`;
@@ -505,8 +504,13 @@ const memoryCache = new Map<string, { data: UserFact, timestamp: number }>();
 async function saveChats(chats: { role: 'user' | 'assistant', content: string, conversationId: string }[]) {
     if (chats.length === 0) return;
 
+    // Filter out entries with empty content
+    const validChats = chats.filter(chat => chat.content && chat.content.trim() !== '');
+
+    if (validChats.length === 0) return;
+
     try {
-        return await ChatMessage.insertMany(chats);
+        return await ChatMessage.insertMany(validChats);
     } catch (error) {
         console.error('Error saving chats:', error);
         throw error;
@@ -563,19 +567,188 @@ async function getUserMemory(userName: string): Promise<UserFact> {
 
         if (!memory) {
             const newMemory = await UserMemory.create({
-                userFact: `# User Profile: ${userName}\n\n## Personal Information\n- Name: ${userName}\n- System: Ubuntu 24.04 LTS\n- Shell: ${process.env.SHELL || '/bin/bash'}\n- Home: ${os.homedir()}\n\n## Preferences\n\n## Technical Skills\n\n## Interests\n\n## Recent Topics\n\n## Projects\n`,
+                userFact: `# User Profile: ${userName}\n\n## Personal Information\n- Name: ${userName}\n- System: ${process.platform} ${os.release()}\n- Shell: ${process.env.SHELL || '/bin/bash'}\n- Home: ${os.homedir()}\n- Timezone: ${Intl.DateTimeFormat().resolvedOptions().timeZone}\n- Language: ${process.env.LANG || 'en'}\n\n## Contact & Social\n- Email: \n- Phone: \n- Location: \n- Social Media: \n\n## Professional Information\n- Job Title: \n- Company: \n- Industry: \n- Experience Level: \n- Skills: \n\n## Personal Details\n- Age: \n- Interests: \n- Hobbies: \n- Goals: \n- Learning Objectives: \n\n## Technical Environment\n- IDE/Editor: \n- Programming Languages: \n- Frameworks: \n- Tools: \n- Operating System Preferences: \n\n## Preferences & Settings\n- Communication Style: \n- Preferred Format: \n- Code Style: \n- Documentation Level: \n\n## Conversation History\n- First Interaction: ${new Date().toISOString()}\n- Last Active: ${new Date().toISOString()}\n- Total Sessions: 1\n- Frequent Topics: \n\n## Projects & Work\n- Current Projects: \n- Past Projects: \n- Technologies Used: \n- Challenges Faced: \n\n## Learning & Development\n- Current Learning: \n- Areas of Interest: \n- Completed Courses: \n- Certifications: \n\n## Notes & Observations\n- Behavioral Patterns: \n- Problem-Solving Style: \n- Communication Preferences: \n- Special Requirements: \n\n## Achievements & Milestones\n- Notable Accomplishments: \n- Project Completions: \n- Skill Milestones: \n\n## Future Plans\n- Short-term Goals: \n- Long-term Objectives: \n- Career Aspirations: \n`,
                 updatedTime: new Date()
             });
             memoryCache.set(cacheKey, { data: newMemory, timestamp: Date.now() });
-            return newMemory;
+            return newMemory as UserFact;
         }
 
         memoryCache.set(cacheKey, { data: memory, timestamp: Date.now() });
-        return memory;
+        return memory as UserFact;
     } catch (error) {
         console.error('Error fetching user memory:', error);
         throw error;
     }
+}
+
+// Enhanced function to update user memory with any information
+async function updateUserMemory(userName: string, updates: Partial<{
+    personalInfo: Record<string, any>;
+    contact: Record<string, any>;
+    professional: Record<string, any>;
+    technical: Record<string, any>;
+    preferences: Record<string, any>;
+    projects: Record<string, any>;
+    learning: Record<string, any>;
+    notes: string;
+    achievements: string[];
+    goals: string[];
+    customFields: Record<string, any>;
+}>): Promise<UserFact> {
+    try {
+        const memory = await getUserMemory(userName);
+        let userFactContent = memory.userFact;
+
+        // Helper function to update sections
+        const updateSection = (sectionName: string, content: string) => {
+            const regex = new RegExp(`(## ${sectionName}\\n)([\\s\\S]*?)(?=\\n## |$)`, 'i');
+            if (regex.test(userFactContent)) {
+                userFactContent = userFactContent.replace(regex, `$1${content}\n`);
+            } else {
+                userFactContent += `\n## ${sectionName}\n${content}\n`;
+            }
+        };
+
+        // Update various sections based on provided data
+        if (updates.personalInfo) {
+            const personalContent = Object.entries(updates.personalInfo)
+                .map(([key, value]) => `- ${key}: ${value}`)
+                .join('\n');
+            updateSection('Personal Information', personalContent);
+        }
+
+        if (updates.contact) {
+            const contactContent = Object.entries(updates.contact)
+                .map(([key, value]) => `- ${key}: ${value}`)
+                .join('\n');
+            updateSection('Contact & Social', contactContent);
+        }
+
+        if (updates.professional) {
+            const professionalContent = Object.entries(updates.professional)
+                .map(([key, value]) => `- ${key}: ${value}`)
+                .join('\n');
+            updateSection('Professional Information', professionalContent);
+        }
+
+        if (updates.technical) {
+            const technicalContent = Object.entries(updates.technical)
+                .map(([key, value]) => `- ${key}: ${value}`)
+                .join('\n');
+            updateSection('Technical Environment', technicalContent);
+        }
+
+        if (updates.preferences) {
+            const preferencesContent = Object.entries(updates.preferences)
+                .map(([key, value]) => `- ${key}: ${value}`)
+                .join('\n');
+            updateSection('Preferences & Settings', preferencesContent);
+        }
+
+        if (updates.projects) {
+            const projectsContent = Object.entries(updates.projects)
+                .map(([key, value]) => `- ${key}: ${value}`)
+                .join('\n');
+            updateSection('Projects & Work', projectsContent);
+        }
+
+        if (updates.learning) {
+            const learningContent = Object.entries(updates.learning)
+                .map(([key, value]) => `- ${key}: ${value}`)
+                .join('\n');
+            updateSection('Learning & Development', learningContent);
+        }
+
+        if (updates.notes) {
+            updateSection('Notes & Observations', updates.notes);
+        }
+
+        if (updates.achievements) {
+            const achievementsContent = updates.achievements.map(achievement => `- ${achievement}`).join('\n');
+            updateSection('Achievements & Milestones', achievementsContent);
+        }
+
+        if (updates.goals) {
+            const goalsContent = updates.goals.map(goal => `- ${goal}`).join('\n');
+            updateSection('Future Plans', goalsContent);
+        }
+
+        if (updates.customFields) {
+            Object.entries(updates.customFields).forEach(([sectionName, content]) => {
+                if (typeof content === 'object') {
+                    const formattedContent = Object.entries(content)
+                        .map(([key, value]) => `- ${key}: ${value}`)
+                        .join('\n');
+                    updateSection(sectionName, formattedContent);
+                } else {
+                    updateSection(sectionName, String(content));
+                }
+            });
+        }
+
+        const sessionMatch = userFactContent.match(/- Total Sessions: (\d+)/);
+        if (sessionMatch) {
+            const currentSessions = parseInt(sessionMatch[1]) + 1;
+            userFactContent = userFactContent.replace(/- Total Sessions: \d+/, `- Total Sessions: ${currentSessions}`);
+        }
+
+        userFactContent = userFactContent.replace(/- Last Active: [^\n]+/, `- Last Active: ${new Date().toISOString()}`);
+
+        const updatedMemory = await UserMemory.findOneAndUpdate(
+            { userFact: { $regex: userName, $options: 'i' } },
+            {
+                userFact: userFactContent,
+                updatedTime: new Date()
+            },
+            { new: true }
+        );
+
+        if (!updatedMemory) {
+            throw new Error(`Failed to update memory for user: ${userName}`);
+        }
+
+        // Update cache
+        const cacheKey = `memory_${userName}`;
+        memoryCache.set(cacheKey, { data: updatedMemory, timestamp: Date.now() });
+
+        return updatedMemory as UserFact;
+    } catch (error) {
+        console.error('Error updating user memory:', error);
+        throw error;
+    }
+}
+
+// Convenience function to add a quick note
+async function addUserNote(userName: string, note: string, category: string = 'General'): Promise<UserFact> {
+    const timestamp = new Date().toISOString();
+    const noteEntry = `[${timestamp}] ${category}: ${note}`;
+
+    return updateUserMemory(userName, {
+        notes: noteEntry
+    });
+}
+
+// Function to track user interaction
+async function trackUserInteraction(userName: string, interaction: {
+    topic?: string;
+    action?: string;
+    context?: string;
+    outcome?: string;
+}): Promise<UserFact> {
+    const timestamp = new Date().toISOString();
+    const interactionNote = `[${timestamp}] ${interaction.topic || 'General'}: ${interaction.action || 'Interaction'} - ${interaction.context || ''} ${interaction.outcome ? `(Result: ${interaction.outcome})` : ''}`;
+
+    return updateUserMemory(userName, {
+        notes: interactionNote,
+        customFields: {
+            'Recent Activity': {
+                'Last Topic': interaction.topic,
+                'Last Action': interaction.action,
+                'Last Context': interaction.context
+            }
+        }
+    });
 }
 
 async function buildPromptWithMemory(prompt: string, conversationId: string, maxTokens = 6000) {
@@ -882,7 +1055,6 @@ export async function generateResponseDeepseek(
         return finalResponse;
     });
 }
-
 export async function generateResponseGemini(
     prompt: string,
     conversationId: string,
@@ -898,57 +1070,41 @@ export async function generateResponseGemini(
         const { messages } = await buildPromptWithMemory(prompt, conversationId);
         const savePromise = saveChats([{ role: "user", content: prompt, conversationId }]);
 
-        const model = geminiai.getGenerativeModel({
-            model: "gemini-pro",
-            generationConfig: {
-                temperature,
-                maxOutputTokens: maxTokens,
-            }
-        });
+        // Format messages correctly - use the working approach from the second document
+        const systemPrompt = messages.find(msg => msg.role === 'system')?.content || '';
+        const userMessages = messages.filter(msg => msg.role !== 'system');
+        const formattedContent = systemPrompt + '\n\n' + userMessages.map(msg =>
+            `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`
+        ).join('\n');
 
-        const chatSession = model.startChat({
-            history: messages.map(msg => ({
-                role: msg.role === 'user' ? 'user' : 'model',
-                parts: [{ text: msg.content }]
-            }))
-        });
-
-        const result = await chatSession.sendMessage(prompt);
-        const response = await result.response;
-        const reply = response.text();
-
-        await savePromise;
-        const processedResponse = await processAIResponse(reply, conversationId);
-
-        // Format response with results
-        let finalResponse = processedResponse.reply;
-
-        if (processedResponse.terminalResults.length > 0) {
-            finalResponse += '\n\n---\n💻 **Terminal Operations:**\n';
-            processedResponse.terminalResults.forEach((termResult, index) => {
-                finalResponse += `\n**Command ${index + 1}** (${termResult.executionTime}ms):\n`;
-                if (termResult.success) {
-                    finalResponse += `✅ Exit Code: ${termResult.exitCode}\n`;
-                    if (termResult.stdout) {
-                        finalResponse += `📤 **Output:**\n\`\`\`\n${termResult.stdout.slice(0, 2000)}${termResult.stdout.length > 2000 ? '\n... (truncated)' : ''}\n\`\`\`\n`;
-                    }
-                } else {
-                    finalResponse += `❌ Exit Code: ${termResult.exitCode}\n`;
-                    if (termResult.stderr) {
-                        finalResponse += `📤 **Error:**\n\`\`\`\n${termResult.stderr.slice(0, 1000)}${termResult.stderr.length > 1000 ? '\n... (truncated)' : ''}\n\`\`\`\n`;
-                    }
-                }
-                finalResponse += `📁 **Working Directory:** ${termResult.workingDir}\n`;
+        try {
+            const response = await geminiai.models.generateContent({
+                model: "gemini-2.0-flash",
+                contents: [{ text: formattedContent }]
             });
+
+            await savePromise;
+
+            // Fix: Use response.text instead of response.choices[0].message.content
+            const reply = response.text || "No response generated";
+
+            const processedResponse = await processAIResponse(reply, conversationId);
+
+            // Format response with results
+            let finalResponse = processedResponse.reply;
+
+
+            if (processedResponse.memoryUpdated) {
+                finalResponse += '\n\n🧠 *Memory updated with new information*';
+            }
+
+            finalResponse += `\n\n⏱️ *Processed in ${processedResponse.executionTime}ms*`;
+
+            return finalResponse;
+        } catch (error: any) {
+            console.error("Gemini API error:", error);
+            throw error;
         }
-
-        if (processedResponse.memoryUpdated) {
-            finalResponse += '\n\n🧠 *Memory updated with new information*';
-        }
-
-        finalResponse += `\n\n⏱️ *Processed in ${processedResponse.executionTime}ms*`;
-
-        return finalResponse;
     });
 }
 
